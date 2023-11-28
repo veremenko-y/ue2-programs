@@ -1,21 +1,21 @@
 .include "../sdk/ue2.inc"
 
 .segment "CODE"
-    lrp hellorld
+.org $400
+    lrp     hellorld
 loop:
     ldp
-    cmp zero
-    bz done
-    stl TX
+    cmp     zero
+    bz      * ; keep spinning in place
+    stl     TX
     inp
-    scf Z
-    bz loop
+    scf     Z
+    bz      loop
 
-done:
-    stl HALT
-
-
+.segment "RODATA"
 hellorld:
-    .byte "Hellorld\n"
+    .byte "\nHellorld"
 zero:
     .byte 0
+
+
