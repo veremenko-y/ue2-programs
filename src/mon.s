@@ -1,16 +1,16 @@
 .include "../sdk/ue2.inc"
 
+ASSEMBLER = 0
 
 CR = 13
 BUFLEN = $40
-
 DOT = '.'
 COLON = ':'
 PROMPT = '>'
 SPACE = ' '
 RCHAR = 'R'
-
-
+ECHAR = 'E'
+BANGCHAR = '!'
 
 .segment "CODE"
 init:
@@ -18,11 +18,12 @@ init:
     stl     TX
     lda     PROMPT
     stl     TX
+
+    lda     $0            ; reset mode
+    stl     mode
 rdline:
     lrp     inputbuf      ; init input buffer
-    lda     $0            ; init buffer length
     stl     inputcnt
-    stl     mode
     stl     parsedcnt     ; clear parsed digit count
     stl     parsed        ; clear parsed value
     stl     parsed+1
@@ -57,7 +58,7 @@ exec_withclear:
     stl     parsedcnt
     stl     parsed        ; clear parsed
     stl     parsed+1
-    ;jmpz    exec
+    stl     mnemoniccnt
 exec:
     deci    inputcnt, 1   ; if out of buffer, start over
     bl :+                 ; if >= 0, continue
@@ -66,6 +67,19 @@ exec:
     inci    nextbuf-1, 1  ; increment start of buffer
     lrp     inputbuf+0    ; self modifying code
 nextbuf:
+.if ASSEMBLER = 1
+    ldl     mode          ; if in assembly mode
+    cmpi    3
+    bz :+
+    jmpz    nextbuf_skip
+:
+    ldl     mnemoniccnt   ; and if not parsed mnemonic yet
+    cmpi    3
+    bz :+
+    jmpz    nothex        ; parse mnemonic, otherwise parse number
+:
+nextbuf_skip:
+.endif
     ldp
 
     orei    $30           ; if '0'-'9'
@@ -83,7 +97,7 @@ notdigit:
     bl      nothex        ; else execute
     cmpi    $09           ; if > 9
     bl      :+
-    jmpz nothex
+    jmpz    nothex
 :
     stl     inputchar
     jmpz    shiftin_parsed
@@ -98,6 +112,11 @@ nothex:
     ldl     inputchar
     cmpi    CR
     bz      run_mode
+.if ASSEMBLER = 1
+    ldl     mode
+    cmpi    $3
+    bz      assemble_mnemonic
+.endif
 
     ldl     inputchar
     cmpi    DOT
@@ -106,6 +125,10 @@ nothex:
     bz      colon_mode
     cmpi    RCHAR
     bz      r_mode
+.if ASSEMBLER = 1
+    cmpi    BANGCHAR
+    bz      bang_mode
+.endif
 
     jmpz    run_mode
 dot_mode:
@@ -117,13 +140,13 @@ colon_mode:
     stl     mode
     jmpz    readsingle
 r_mode:
-    ldl addrfrom
-    stl r_mode_sm
-    ldl addrfrom+1
-    stl r_mode_sm+1
-    scf Z
+    ldl     addrfrom
+    stl     r_mode_sm
+    ldl     addrfrom+1
+    stl     r_mode_sm+1
+    scf     Z
 r_mode_sm:
-    bz $000
+    bz      $000
 run_mode:
     ldl     mode
     cmpi    $0
@@ -132,11 +155,15 @@ run_mode:
     bz      readmulti
     cmpi    $2
     bz      writemulti
+.if ASSEMBLER = 1
+    cmpi    $3
+    bz      assemble
+.endif
     jmpz    init
 readsingle:
     ldl     parsedcnt
     cmpi    0
-    bz      :+          ; skip if nothing to read
+    bz      :+            ; skip if nothing to read
     ldl     parsed
     stl     addrfrom
     stl     addrto
@@ -144,7 +171,7 @@ readsingle:
     stl     addrfrom+1
     stl     addrto+1
     ;call    readmemory
-    jmpz optimization1
+    jmpz    optimization1
 :
     jmpz    exec_withclear
 readmulti:
@@ -162,7 +189,7 @@ optimization1:
 :
     jmpz    exec_withclear
 writemulti:
-    ldl     parsedcnt ; if no data, skip
+    ldl     parsedcnt     ; if no data, skip
     cmpi    0
     bz      exec_withclear
 
@@ -186,18 +213,11 @@ write_sm:                 ; self modifying write
 
     jmpz    exec_withclear
 
+
 ; =====================================
 ; Print memory between addfrom and addrto
 ; =====================================
 readmemory:
-;     ldl addrfrom
-;     orii (I_LRP << 4)
-;     stl readmemory_sm
-;     ldl addrfrom+1
-;     stl readmemory_s+1
-
-; readmemory_sm:
-;     lrp $000
 readmemory_row:
     lda     CR
     stl     TX
@@ -337,6 +357,133 @@ printhex:
 
     ret     printhex
 
+.if ASSEMBLER = 1
+; ==========================================
+; Built-in assembler routines
+; ===========================================
+bang_mode:                ; switch to assembler mode
+    lda     $3
+    stl     mode
+    jmpz    exec_withclear
+assemble_mnemonic:        ; copy 3 byte mnemonic into `mnemonic`
+    ldl     mnemoniccnt   ; check if already parsed 3 chars
+    cmpi    3
+    bz      exec          ; if yes, skip until parsed value or CR
+
+    scf     0             ; mnemonic[mnemonicnt] = inputchar
+    lda     <mnemonic
+    adc     mnemoniccnt
+    stl     assemble_mnemonic_sm+1
+    lda     >mnemonic
+    adci    0
+    orii    (I_STL << 4)
+    stl     assemble_mnemonic_sm
+    ldl     inputchar
+assemble_mnemonic_sm:
+    stl     $000
+    inci    mnemoniccnt, 1
+    cmpi    3
+    bz      assemble_search
+    jmpz    exec
+assemble_search:        ; seach list for an opcode
+    lrp     opcodes
+assemble_loop:
+    ldp
+    inp
+    cmpi    0
+    bz      assemble_err ; compare bytes one by one
+    ore     mnemonic+0
+    bz :+
+    jmpz    skip3
+:
+    ldp
+    inp
+    ore     mnemonic+1
+    bz :+
+    jmpz    skip2
+:
+    ldp
+    inp
+    ore     mnemonic+2
+    bz :+
+    jmpz    skip1
+:
+
+    ldp
+    stl     mnemonic      ; store opcode byte
+    jmpz    exec
+skip3:
+    inp
+skip2:
+    inp
+skip1:
+    inp
+    jmpz    assemble_loop
+
+assemble_err:           ; error if not found
+    lda     ECHAR
+    stl     TX
+    jmpz    init
+
+assemble:               ; write assembled code into memory
+    ldl     mnemoniccnt
+    cmpi    3
+    bz :+
+    jmpz    init
+    :
+
+    ldl     addrfrom
+    orii    (I_LRP << 4)
+    stl     assemble_sm
+    ldl     addrfrom+1
+    stl     assemble_sm+1
+assemble_sm:
+    lrp     $000
+    ldl     mnemonic
+    ori     parsed
+    stp
+    inp
+    ldl     parsed+1
+    stp
+
+    lda     0             ; reset mnemonic count
+    stl     mnemoniccnt
+    ; increment addrfrom by 2
+    lda     2
+    scf     0
+    adc     addrfrom+1
+    stl     addrfrom+1
+    lda     0
+    adc     addrfrom
+    stl     addrfrom
+
+    lda     CR
+    stl     TX
+    lda     BANGCHAR
+    stl     TX
+    jmpz    rdline
+
+.segment "RODATA"
+opcodes:
+    .byte "BRZ", (0 << 4)
+    .byte "BRL", (1 << 4)
+    .byte "LDA", (2 << 4)
+    .byte "LDL", (3 << 4)
+    .byte "LDP", (4 << 4)
+    .byte "STL", (5 << 4)
+    .byte "STP", (6 << 4)
+    .byte "LRP", (7 << 4)
+    .byte "INP", (8 << 4)
+    .byte "SCF", (9 << 4)
+    .byte "ADC", (10 << 4)
+    .byte "CMP", (11 << 4)
+    .byte "SRL", (12 << 4)
+    .byte "NAN", (13 << 4)
+    .byte "ORI", (14 << 4)
+    .byte "ORE", (15 << 4)
+    .byte 0
+
+.endif
 
 .segment "RODATA"
 emmit_used_literals
@@ -364,6 +511,14 @@ inputchar:
     .res 1
 inputcnt:
     .res 1
+mnemonic:
+    .res 3
+mnemoniccnt:
+    .res 3
+
+
+
+
 
 
 
