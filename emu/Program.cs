@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Reflection.Emit;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
-using Terminal.Gui;
 
 namespace ue2_emu
 {
