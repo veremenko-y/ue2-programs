@@ -1,0 +1,4 @@
+/out/*
+!/out/placeholder.txt
+/cc65/*
+!/cc65/placeholder.txt
