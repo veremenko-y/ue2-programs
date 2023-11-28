@@ -8,6 +8,7 @@ DOT = '.'
 COLON = ':'
 PROMPT = '>'
 SPACE = ' '
+RCHAR = 'R'
 
 
 
@@ -103,6 +104,8 @@ nothex:
     bz      dot_mode
     cmpi    COLON
     bz      colon_mode
+    cmpi    RCHAR
+    bz      r_mode
 
     jmpz    run_mode
 dot_mode:
@@ -113,7 +116,14 @@ colon_mode:
     lda     2
     stl     mode
     jmpz    readsingle
-
+r_mode:
+    ldl addrfrom
+    stl r_mode_sm
+    ldl addrfrom+1
+    stl r_mode_sm+1
+    scf Z
+r_mode_sm:
+    bz $000
 run_mode:
     ldl     mode
     cmpi    $0
@@ -180,6 +190,15 @@ write_sm:                 ; self modifying write
 ; Print memory between addfrom and addrto
 ; =====================================
 readmemory:
+;     ldl addrfrom
+;     orii (I_LRP << 4)
+;     stl readmemory_sm
+;     ldl addrfrom+1
+;     stl readmemory_s+1
+
+; readmemory_sm:
+;     lrp $000
+readmemory_row:
     lda     CR
     stl     TX
     call_prologue printhex
@@ -207,7 +226,7 @@ read_ind:
     ldl     tmp
     call_exec printhex
 
-
+    ; todo use RRP instead from and to
 
     cmpa    addrfrom, addrto
     bz      :+
@@ -229,7 +248,7 @@ read_ind:
     ldl     addrfrom+1
     andi    tmp, $0f
     cmpi    0
-    bz      readmemory
+    bz      readmemory_row
     jmpz    readmemory_next
 readmemory_end:
     ret     readmemory
