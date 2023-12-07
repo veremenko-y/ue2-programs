@@ -641,6 +641,40 @@ expr:
         stl tokbuf_right
         jmpz expr_done
     :
+    cmpi '*'
+    bnz :+
+        call get_char ; consume
+        scall term
+        mov16 tokbuf_left, mul_in1
+        mov16 tokbuf_right, mul_in2
+        break1:
+        call mul16
+        break3:
+        mov16 mul_out+2, tokbuf_right
+        jmpz expr_done
+    :
+    cmpi '/'
+    bnz :+
+        call get_char ; consume
+        scall term
+
+        mov16 tokbuf_left, div_in1
+        mov16 tokbuf_right, div_in2
+        call div16
+        mov16 div_in1, tokbuf_right
+        jmpz expr_done
+    :
+    cmpi '%'
+    bnz :+
+        call get_char ; consume
+        scall term
+       
+        mov16 tokbuf_left, div_in1
+        mov16 tokbuf_right, div_in2
+        call div16
+        mov16 div_rem, tokbuf_right
+        jmpz expr_done
+    :
 expr_done:
     sret
 
