@@ -8,7 +8,7 @@ namespace ue2_emu
 {
     internal class Program
     {
-        const int HALT = 0xfff;
+        const int BREAK = 0xfff;
         const int RXREADY = 0xffe;
         const int RX = 0xffd;
         const int TX = 0xffc;
@@ -22,6 +22,7 @@ namespace ue2_emu
         static Ue2 ue2;
         static List<(string label, int addr)> labels = new List<(string label, int addr)>();
         static Queue<char> rxbuf = new Queue<char>();
+        static bool rxreq = false;
         static int elapsedInstr = 0;
         static Stopwatch totalElapsed = new Stopwatch();
         // static List<string> dbgHistory = new List<string>();
@@ -41,18 +42,19 @@ namespace ue2_emu
             };
 
             ue2 = new Ue2();
-            ue2.SetMmio(HALT, req =>
+            ue2.SetMmio(BREAK, req =>
             {
                 if (req.IsWrite())
                 {
                     req.Handled = true;
-                    ue2.Halt();
+                    openDebugger = true;
                 }
             });
             ue2.SetMmio(RXREADY, req =>
             {
                 if (req.IsRead)
                 {
+                    rxreq = true;
                     req.Write((byte)(rxbuf.Count > 0 ? 1 : 0));
                 }
             });
@@ -111,7 +113,8 @@ namespace ue2_emu
                 }
                 else
                 {
-                    if (ue2.nextpc == breakpoint && isContinue == false)
+                    if (ue2.nextpc == breakpoint && isContinue == false
+                    )
                     {
                         totalElapsed.Stop();
                         Console.WriteLine();
@@ -127,11 +130,15 @@ namespace ue2_emu
                         totalElapsed.Restart();
                         isContinue = false;
                     }
-                    if (Console.KeyAvailable)
+                    if (rxbuf.Count == 0 && rxreq)
                     {
-                        var key = Console.ReadKey(true);
-                        var c = char.ToUpper(key.KeyChar);
-                        rxbuf.Enqueue(c);
+                        rxreq = false;
+                        if (Console.KeyAvailable)
+                        {
+                            var key = Console.ReadKey(true);
+                            var c = char.ToUpper(key.KeyChar);
+                            rxbuf.Enqueue(c);
+                        }
                     }
                     var ts = Stopwatch.GetTimestamp();
                     var elapsed = ts - lastTs;
@@ -187,22 +194,14 @@ namespace ue2_emu
                 instrCount++;
                 WriteTrace();
             }
-            else if (arg[0] == "c")
+            else if (line.StartsWith("c"))
             {
                 trace = false;
                 isContinue = true;
-                if (arg.Length > 1)
+                if (line == "cn")
                 {
                     breakpoint = ue2.pc + 2;
                 }
-            }
-            else if (arg[0] == "cn")
-            {
-                trace = false;
-                breakpoint = breakpoint + 2;
-                 ue2.Step();
-                instrCount++;
-                WriteTrace();
             }
             else if (arg[0] == "speed")
             {
@@ -318,7 +317,11 @@ namespace ue2_emu
                     var lines = File.ReadAllLines(dbgScript);
                     foreach (var l in lines)
                     {
-                        ExecuteDebugger(l);
+                        var s = l.Trim();
+                        if (s.StartsWith("#") == false)
+                        {
+                            ExecuteDebugger(s);
+                        }
                     }
                 }
             }

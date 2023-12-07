@@ -102,7 +102,7 @@
                     SetZero(rra);
                     break;
                 case OpCode.ORI:
-                    rra = ((rra | Read8(addr))) & 0xff;
+                    rra = (rra | Read8(addr)) & 0xff;
                     SetZero(rra);
                     break;
                 case OpCode.ORE:

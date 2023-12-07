@@ -14,7 +14,7 @@ foreach ($l in $lines) {
 }
 # $lines | ConvertTo-Json
 foreach ($l in $lines) {
-    if ($l -match '^(\s*)([A-Za-z0-9_]{1,7})\s+([#$A-Za-z0-9_\-\(\)\.]{1}.*)$') {
+    if ($l -match '^(\s*)([A-Za-z0-9_]{1,7})\s+([<>+:#$A-Za-z0-9_\-\(\)\.]{1}.*)$') {
         $l = "$($Matches[1])$($Matches[2].PadRight(8, ' '))$($Matches[3])"
     }
 
