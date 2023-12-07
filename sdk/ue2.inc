@@ -157,6 +157,8 @@ Z = 2
 ; Pseudoinstructions
 ; ******************************************
 
+.define negi(v) ((~(v))+1)
+
 __ret_counter .set 0
 
 .macro call_prologue label
@@ -165,6 +167,13 @@ __ret_counter .set 0
     stl .ident(.concat(.string(label), "_ret")) ; store in the subroutine epilogue
     ; load lo byte of return address
     lda <.ident(.sprintf("__ret_%d", __ret_counter))
+    stl .ident(.concat(.string(label), "_ret"))+1 ; store in the subroutine epilogue
+.endmacro
+
+.macro call_set_ret label, retlbl
+    lda >retlbl
+    stl .ident(.concat(.string(label), "_ret")) ; store in the subroutine epilogue
+    lda <retlbl
     stl .ident(.concat(.string(label), "_ret"))+1 ; store in the subroutine epilogue
 .endmacro
 
@@ -180,7 +189,27 @@ __ret_counter .set (__ret_counter) + 1
     call_exec label
 .endmacro
 
+.macro chaincall label, destination
+    call_set_ret label, destination
+    call_exec label
+.endmacro
+
+.macro call_preserve_c label
+.local l1, l2
+    call_prologue label
+    bl l1
+    scf Z
+    bz l2
+l1:
+    scf C|Z
+l2:
+    bz label
+.ident(.sprintf("__ret_%d", __ret_counter)):
+__ret_counter .set (__ret_counter) + 1
+.endmacro
+
 .macro ret label
+    __ret_counter .set (__ret_counter) + 1
     scf     Z
 .ident(.concat(.string(label), "_ret")):
 .global label
@@ -190,6 +219,20 @@ __ret_counter .set (__ret_counter) + 1
 .macro jmpz label
     scf     Z
     bz      label
+.endmacro
+
+.macro bnz label
+.local l1
+    bz l1
+    jmpz label
+l1:
+.endmacro
+
+.macro bnl label
+.local l1
+    bl l1
+    jmpz label
+l1:
 .endmacro
 
 .define __const_id(id) .ident(.sprintf("__lit_%d", <(id)))
@@ -211,11 +254,41 @@ __ret_counter .set (__ret_counter) + 1
     ; cmp .ident(.sprintf("__lit_%d", <(literal)))
 .endmacro
 
-.macro cmpa addr1, addr2
-    ldl addr2
-    nand addr2
+.macro cmpeq16i addr, literal
+.local l1, l2
+    lda >literal
+    ore addr
+    bz l1
+    scf C
+    bl l2
+l1:
+    lda <literal
+    ore addr+1
+l2:
+
+.endmacro
+
+.macro neg addr
+    ldl addr
+    nand addr
     scf 0
     adci 1
+.endmacro
+
+.macro neg16 addr
+    scf 0
+    ldl addr+1
+    nand addr+1
+    adci 1
+    stl addr+1
+    ldl addr
+    nand addr
+    adci 0
+    stl addr
+.endmacro
+
+.macro cmpa addr1, addr2
+    neg addr2
     cmp addr1
 .endmacro
 
@@ -226,6 +299,31 @@ __ret_counter .set (__ret_counter) + 1
 .macro sbci literal
     adc __const_id(((~(literal))+1))
 .endmacro
+
+.macro sub addr1, addr2
+    ldl addr2
+    nand addr2
+    scf 0
+    adci 1
+    adc addr1
+.endmacro
+
+.macro sbc addr1, addr2
+    ldl addr2
+    nand addr2
+    adc addr1
+.endmacro
+
+
+.macro add16_8 dest
+    scf 0
+    adc dest+1
+    stl dest+1
+    lda 0
+    adc dest
+    stl dest
+.endmacro
+
 
 .macro orei literal
     ore __const_id(literal)
@@ -252,9 +350,53 @@ __ret_counter .set (__ret_counter) + 1
     stl addr
 .endmacro
 
+.macro inc16i addr, literal
+    ldl addr+1
+    scf 0
+    adci literal
+    stl addr+1
+    ldl addr
+    adci 0
+    stl addr
+.endmacro
+
 .macro deci addr, literal
     ldl addr
     scf 0
+    sbci literal
+    stl addr
+.endmacro
+
+.macro mov16 src, dest
+    ldl src
+    stl dest
+    ldl src+1
+    stl dest+1
+.endmacro
+
+.macro mov16i src, dest
+    lda >src
+    stl dest
+    lda <src
+    stl dest+1
+.endmacro
+
+.macro movi src, dest
+    lda src
+    stl dest
+.endmacro
+
+.macro mov src, dest
+    ldl src
+    stl dest
+.endmacro
+
+.macro deci16 addr, literal
+    ldl addr+1
+    scf 0
+    sbci literal
+    stl addr+1
+    ldl addr
     sbci literal
     stl addr
 .endmacro
